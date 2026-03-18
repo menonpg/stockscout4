@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "cd .. && python -m uvicorn stockscout4.web:app --host 0.0.0.0 --port $PORT",
+    "startCommand": "python -m uvicorn web:app --host 0.0.0.0 --port $PORT",
     "healthcheckPath": "/api/health",
     "restartPolicyType": "ON_FAILURE"
   }
