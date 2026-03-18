@@ -10,13 +10,18 @@ from dataclasses import dataclass
 
 try:
     from .prompts import (
+        FUNDAMENTALS_ANALYST,
+        SENTIMENT_ANALYST, 
+        TECHNICAL_ANALYST,
+        MACRO_ANALYST
+    )
 except ImportError:
     from prompts import (
-    FUNDAMENTALS_ANALYST,
-    SENTIMENT_ANALYST, 
-    TECHNICAL_ANALYST,
-    MACRO_ANALYST
-)
+        FUNDAMENTALS_ANALYST,
+        SENTIMENT_ANALYST, 
+        TECHNICAL_ANALYST,
+        MACRO_ANALYST
+    )
 
 
 @dataclass
