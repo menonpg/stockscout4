@@ -1,0 +1,19 @@
+# StockScout v4 Dependencies
+
+# LLM Clients
+anthropic>=0.40.0
+openai>=1.50.0
+
+# Async HTTP
+aiohttp>=3.9.0
+
+# Web server
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Utilities
+python-dotenv>=1.0.0
