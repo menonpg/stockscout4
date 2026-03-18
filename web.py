@@ -8,10 +8,10 @@ import os
 import json
 import asyncio
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -77,6 +77,64 @@ async def analyze(request: AnalysisRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/analyze/stream/{ticker}")
+async def analyze_stream(ticker: str):
+    """Stream analysis progress via Server-Sent Events."""
+    
+    async def event_generator() -> AsyncGenerator[str, None]:
+        pipe = get_pipeline()
+        ticker_upper = ticker.upper()
+        
+        steps = [
+            ("intel", "🔍 Gathering market intel...", 10),
+            ("fundamentals", "📊 Fundamentals analyst working...", 20),
+            ("sentiment", "💭 Sentiment analyst working...", 30),
+            ("technical", "📈 Technical analyst working...", 40),
+            ("macro", "🌍 Macro analyst working...", 50),
+            ("debate_1", "🎭 Bull vs Bear debate round 1...", 60),
+            ("debate_2", "🎭 Bull vs Bear debate round 2...", 70),
+            ("synthesis", "🔮 Synthesizing debate...", 80),
+            ("trader", "💹 Trader agent reviewing...", 85),
+            ("risk", "⚠️ Risk manager checking...", 90),
+            ("pm", "👔 Portfolio manager deciding...", 95),
+        ]
+        
+        try:
+            # Send initial status
+            yield f"data: {json.dumps({'step': 'start', 'message': f'Starting analysis for {ticker_upper}', 'progress': 0})}\n\n"
+            
+            portfolio = {
+                "cash": 100000,
+                "positions": {},
+                "sector_exposure": {},
+                "strategy": {"style": "growth", "risk_tolerance": "moderate"}
+            }
+            
+            # Run analysis with progress updates
+            for step_id, message, progress in steps:
+                yield f"data: {json.dumps({'step': step_id, 'message': message, 'progress': progress})}\n\n"
+                await asyncio.sleep(0.1)  # Small delay for UX
+            
+            # Run actual analysis
+            result = await pipe.analyze(ticker_upper, portfolio)
+            
+            # Send final result
+            yield f"data: {json.dumps({'step': 'complete', 'message': 'Analysis complete!', 'progress': 100, 'result': result})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'step': 'error', 'message': str(e), 'progress': 0})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
 @app.post("/api/morning-brief")
 async def morning_brief(request: BriefRequest):
     """Run morning brief for watchlist."""
@@ -118,6 +176,38 @@ HTML_TEMPLATE = """
         <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-blue-400 mb-2">📊 StockScout v4</h1>
             <p class="text-gray-400">AI Trading Desk — Multi-agent analysis with debate mechanism</p>
+            <button onclick="toggleAbout()" class="mt-2 text-sm text-blue-400 hover:text-blue-300">
+                ℹ️ How it works
+            </button>
+        </div>
+
+        <!-- About Section (Collapsible) -->
+        <div id="aboutSection" class="hidden bg-gray-800 rounded-lg p-6 mb-6 text-sm">
+            <h3 class="text-lg font-semibold text-blue-400 mb-3">🧠 How StockScout v4 Works</h3>
+            
+            <div class="grid md:grid-cols-2 gap-4 mb-4">
+                <div class="bg-gray-700/50 rounded p-3">
+                    <div class="font-semibold text-green-400 mb-1">1️⃣ Intel Gathering</div>
+                    <p class="text-gray-300">Collects market data, news sentiment, and macro indicators for the ticker.</p>
+                </div>
+                <div class="bg-gray-700/50 rounded p-3">
+                    <div class="font-semibold text-yellow-400 mb-1">2️⃣ Analyst Team (4 AI Analysts)</div>
+                    <p class="text-gray-300">• Fundamentals • Sentiment • Technical • Macro — each scores 1-10</p>
+                </div>
+                <div class="bg-gray-700/50 rounded p-3">
+                    <div class="font-semibold text-purple-400 mb-1">3️⃣ Bull vs Bear Debate</div>
+                    <p class="text-gray-300">Two AI researchers argue the bull and bear cases over 2 rounds, then synthesize.</p>
+                </div>
+                <div class="bg-gray-700/50 rounded p-3">
+                    <div class="font-semibold text-blue-400 mb-1">4️⃣ Trading Desk</div>
+                    <p class="text-gray-300">Trader → Risk Manager → Portfolio Manager chain makes final EXECUTE/PASS decision.</p>
+                </div>
+            </div>
+            
+            <div class="text-gray-400 text-xs">
+                <strong>~12 AI calls per analysis</strong> • ~60-90 seconds • ~$0.15-0.20 per ticker<br>
+                Inspired by <a href="https://github.com/TauricResearch/TradingAgents" class="text-blue-400 hover:underline">TradingAgents</a>
+            </div>
         </div>
 
         <!-- Input Section -->
@@ -202,6 +292,11 @@ HTML_TEMPLATE = """
             if (e.key === 'Enter') runAnalysis();
         });
 
+        function toggleAbout() {
+            const section = document.getElementById('aboutSection');
+            section.classList.toggle('hidden');
+        }
+
         async function runAnalysis() {
             const ticker = document.getElementById('ticker').value.toUpperCase();
             if (!ticker) return;
@@ -212,35 +307,55 @@ HTML_TEMPLATE = """
             document.getElementById('debate').classList.add('hidden');
             document.getElementById('decision').classList.add('hidden');
 
-            // Update status
-            updateStatus('⏳', 'Running Analysis...', `Analyzing ${ticker} through the AI trading desk`);
-
             // Disable button
             const btn = document.getElementById('analyzeBtn');
             btn.disabled = true;
             btn.classList.add('opacity-50');
             btn.textContent = 'Analyzing...';
 
+            // Use streaming endpoint
             try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticker })
-                });
-
-                if (!response.ok) throw new Error('Analysis failed');
+                const eventSource = new EventSource(`/api/analyze/stream/${ticker}`);
                 
-                const data = await response.json();
-                displayResults(data);
-                updateStatus('✅', 'Analysis Complete', `Completed in ${data.duration_seconds?.toFixed(1)}s`);
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.step === 'error') {
+                        updateStatus('❌', 'Error', data.message);
+                        eventSource.close();
+                        resetButton();
+                        return;
+                    }
+                    
+                    if (data.step === 'complete') {
+                        displayResults(data.result);
+                        updateStatus('✅', 'Analysis Complete', `Completed in ${data.result.duration_seconds?.toFixed(1)}s`);
+                        eventSource.close();
+                        resetButton();
+                        return;
+                    }
+                    
+                    // Update progress
+                    updateStatus('⏳', data.message, `${data.progress}% complete`);
+                };
+                
+                eventSource.onerror = () => {
+                    updateStatus('❌', 'Connection lost', 'Please try again');
+                    eventSource.close();
+                    resetButton();
+                };
 
             } catch (error) {
                 updateStatus('❌', 'Error', error.message);
-            } finally {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50');
-                btn.textContent = 'Analyze';
+                resetButton();
             }
+        }
+
+        function resetButton() {
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = false;
+            btn.classList.remove('opacity-50');
+            btn.textContent = 'Analyze';
         }
 
         function updateStatus(icon, text, detail) {
