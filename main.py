@@ -17,8 +17,14 @@ import asyncio
 import json
 from datetime import datetime
 
-from .config import DEFAULT_CONFIG
-from .pipeline import StockScoutPipeline
+try:
+    from .config import DEFAULT_CONFIG
+except ImportError:
+    from config import DEFAULT_CONFIG
+try:
+    from .pipeline import StockScoutPipeline
+except ImportError:
+    from pipeline import StockScoutPipeline
 
 
 async def run_single_analysis(ticker: str, output_file: str = None):

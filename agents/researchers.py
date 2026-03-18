@@ -8,7 +8,10 @@ import json
 from typing import Dict, Any, List
 from dataclasses import dataclass
 
-from .prompts import BULL_RESEARCHER, BEAR_RESEARCHER, DEBATE_SYNTHESIZER
+try:
+    from .prompts import BULL_RESEARCHER, BEAR_RESEARCHER, DEBATE_SYNTHESIZER
+except ImportError:
+    from prompts import BULL_RESEARCHER, BEAR_RESEARCHER, DEBATE_SYNTHESIZER
 
 
 @dataclass

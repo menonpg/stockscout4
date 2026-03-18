@@ -11,15 +11,16 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from dataclasses import asdict
 
-from .config import Config, DEFAULT_CONFIG
-from .agents.analysts import AnalystTeam
-from .agents.researchers import DebateEngine
-from .agents.traders import TradingDesk, FinalDecision
-from .intel.market_data import MarketDataFetcher
-from .intel.pi_scanner import PiScanner
-from .intel.trump_v3 import TrumpSignals
-from .utils.llm_client import LLMClient
-from .utils.soulmate import SoulMateMemory
+try:
+    from .config import Config, DEFAULT_CONFIG
+    from .agents.analysts import AnalystTeam
+    from .agents.researchers import DebateEngine
+    from .agents.traders import TradingDesk, FinalDecision
+    from .intel.market_data import MarketDataFetcher
+    from .intel.pi_scanner import PiScanner
+    from .intel.trump_v3 import TrumpSignals
+    from .utils.llm_client import LLMClient
+    from .utils.soulmate import SoulMateMemory
 
 
 class StockScoutPipeline:

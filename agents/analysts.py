@@ -8,7 +8,10 @@ import json
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from .prompts import (
+try:
+    from .prompts import (
+except ImportError:
+    from prompts import (
     FUNDAMENTALS_ANALYST,
     SENTIMENT_ANALYST, 
     TECHNICAL_ANALYST,

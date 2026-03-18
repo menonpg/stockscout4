@@ -9,7 +9,10 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-from .prompts import TRADER_AGENT, RISK_MANAGER, PORTFOLIO_MANAGER
+try:
+    from .prompts import TRADER_AGENT, RISK_MANAGER, PORTFOLIO_MANAGER
+except ImportError:
+    from prompts import TRADER_AGENT, RISK_MANAGER, PORTFOLIO_MANAGER
 
 
 class TradeAction(Enum):
