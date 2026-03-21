@@ -71,47 +71,32 @@ async def analyze(request: AnalysisRequest):
 
 @app.get("/api/analyze/stream/{ticker}")
 async def analyze_stream(ticker: str):
-    """Stream analysis progress via Server-Sent Events."""
-    
+    """Real streaming — yields analyst results, debate rounds, and final decision as they complete."""
+
     async def event_generator() -> AsyncGenerator[str, None]:
         pipe = get_pipeline()
         ticker_upper = ticker.upper()
-        
-        steps = [
-            ("intel",        "🔍 Gathering market intel...",            10),
-            ("fundamentals", "📊 Fundamentals analyst working...",       20),
-            ("sentiment",    "💭 Sentiment analyst working...",          30),
-            ("technical",    "📈 Technical analyst working...",          40),
-            ("macro",        "🌍 Macro analyst working...",              50),
-            ("debate_1",     "🎭 Bull vs Bear — Round 1 opening...",     60),
-            ("debate_2",     "🎭 Bull vs Bear — Round 2 rebuttal...",    70),
-            ("synthesis",    "🔮 Synthesizing debate outcome...",        80),
-            ("trader",       "💹 Trader agent formulating proposal...",  85),
-            ("risk",         "⚠️ Risk manager checking limits...",       90),
-            ("pm",           "👔 Portfolio manager — final call...",     95),
-        ]
-        
+
+        def sse(payload: dict) -> str:
+            return f"data: {json.dumps(payload, default=str)}\n\n"
+
         try:
-            yield f"data: {json.dumps({'step': 'start', 'message': f'Starting analysis for {ticker_upper}', 'progress': 0})}\n\n"
-            
+            yield sse({"step": "start", "message": f"Starting analysis for {ticker_upper}", "progress": 0})
+
             portfolio = {
                 "cash": 100000,
                 "positions": {},
                 "sector_exposure": {},
-                "strategy": {"style": "growth", "risk_tolerance": "moderate"}
+                "strategy": {"style": "growth", "risk_tolerance": "moderate", "time_horizon": "medium-term"}
             }
-            
-            for step_id, message, progress in steps:
-                yield f"data: {json.dumps({'step': step_id, 'message': message, 'progress': progress})}\n\n"
-                await asyncio.sleep(0.1)
-            
-            result = await pipe.analyze(ticker_upper, portfolio)
-            
-            yield f"data: {json.dumps({'step': 'complete', 'message': 'Analysis complete!', 'progress': 100, 'result': result})}\n\n"
-            
+
+            async for event in pipe.analyze_streaming(ticker_upper, portfolio):
+                yield sse(event)
+
         except Exception as e:
-            yield f"data: {json.dumps({'step': 'error', 'message': str(e), 'progress': 0})}\n\n"
-    
+            import traceback
+            yield sse({"step": "error", "message": str(e), "detail": traceback.format_exc(), "progress": 0})
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -121,7 +106,6 @@ async def analyze_stream(ticker: str):
             "X-Accel-Buffering": "no"
         }
     )
-
 
 @app.post("/api/morning-brief")
 async def morning_brief(request: BriefRequest):
@@ -340,6 +324,22 @@ HTML_TEMPLATE = """
                     return;
                 }
 
+                // ── Intel done — show intel card immediately ───────────────
+                if (data.step === 'intel_done' && data.data) {
+                    showIntelCard(data.data);
+                }
+
+                // ── Analyst done — render card immediately ────────────────
+                if (data.step && data.step.endsWith('_done') && data.data && data.data.name) {
+                    renderAnalystCard(data.data);
+                }
+
+                // ── Debate round — show immediately ───────────────────────
+                if (data.step && data.step.startsWith('debate_round_') && data.data) {
+                    renderDebateRound(data.data, data.step);
+                }
+
+                // ── Complete — fill in anything not yet shown ─────────────
                 if (data.step === 'complete') {
                     displayResults(data.result);
                     const dur = data.result.duration_seconds;
@@ -362,6 +362,101 @@ HTML_TEMPLATE = """
             updateStatus('❌', 'Error', error.message, 0);
             resetButton();
         }
+    }
+
+
+    // ── Show intel card from streaming event ────────────────────────────────
+    function showIntelCard(intel) {
+        if (!intel || !intel.current_price) return;
+        const intelSec = document.getElementById('intelSection');
+        if (intelSec) intelSec.classList.remove('hidden');
+        document.getElementById('results').classList.remove('hidden');
+        const price = intel.current_price ? `$${Number(intel.current_price).toFixed(2)}` : '--';
+        const changePct = intel.change_pct || '--';
+        const sentiment = intel.sentiment || 'neutral';
+        const trumpRel = (intel.trump_relevance || 0).toFixed(1);
+        const el = document.getElementById('intelContent');
+        if (el) el.innerHTML = `
+            <div class="bg-gray-700/50 rounded p-3 text-center">
+                <div class="text-lg font-bold text-blue-300">${price}</div>
+                <div class="text-xs text-gray-400">Current Price</div>
+            </div>
+            <div class="bg-gray-700/50 rounded p-3 text-center">
+                <div class="text-lg font-bold">${changePct}</div>
+                <div class="text-xs text-gray-400">Today</div>
+            </div>
+            <div class="bg-gray-700/50 rounded p-3 text-center">
+                <div class="text-lg font-bold capitalize">${sentiment}</div>
+                <div class="text-xs text-gray-400">Sentiment</div>
+            </div>
+            <div class="bg-gray-700/50 rounded p-3 text-center">
+                <div class="text-lg font-bold">${trumpRel}</div>
+                <div class="text-xs text-gray-400">Trump Signal</div>
+            </div>`;
+    }
+
+    // ── Render a single analyst card as it streams in ──────────────────────
+    function renderAnalystCard(analyst) {
+        document.getElementById('results').classList.remove('hidden');
+        const analystDiv = document.getElementById('analysts');
+        const scoresDiv = document.getElementById('analystScores');
+        if (!analystDiv || !scoresDiv) return;
+        analystDiv.classList.remove('hidden');
+
+        const name = analyst.name;
+        const score = analyst.score || 5;
+        const conf = analyst.confidence || 0;
+        const scoreColor = score >= 7 ? 'text-green-400' : score <= 3 ? 'text-red-400' : 'text-yellow-400';
+        const keyPoints = (analyst.key_points || []).map(p => `<li>${p}</li>`).join('');
+        const risks = (analyst.risks || []).map(r => `<li class="text-red-300">${r}</li>`).join('');
+
+        const existingCard = document.getElementById(`analyst-card-${name}`);
+        const cardHtml = `
+            <div id="analyst-card-${name}" class="bg-gray-700/50 rounded p-4 border-l-4 ${score >= 7 ? 'border-green-500' : score <= 3 ? 'border-red-500' : 'border-yellow-500'}">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-semibold capitalize">${name}</span>
+                    <span class="${scoreColor} text-xl font-bold">${score}/10</span>
+                </div>
+                <div class="text-xs text-gray-400 mb-2">Confidence: ${(conf * 100).toFixed(0)}%</div>
+                ${keyPoints ? `<ul class="text-sm text-gray-300 list-disc list-inside space-y-1 mb-2">${keyPoints}</ul>` : ''}
+                ${risks ? `<ul class="text-sm list-disc list-inside space-y-1">${risks}</ul>` : ''}
+            </div>`;
+        if (existingCard) {
+            existingCard.outerHTML = cardHtml;
+        } else {
+            scoresDiv.insertAdjacentHTML('beforeend', cardHtml);
+        }
+    }
+
+    // ── Render a debate round as it streams in ─────────────────────────────
+    function renderDebateRound(rnd, stepId) {
+        document.getElementById('results').classList.remove('hidden');
+        const debateDiv = document.getElementById('debate');
+        if (!debateDiv) return;
+        debateDiv.classList.remove('hidden');
+        const debateContent = document.getElementById('debateContent');
+        if (!debateContent) return;
+
+        const roundNum = stepId.replace('debate_round_', '');
+        const bull = rnd.bull_argument || rnd.bull || {};
+        const bear = rnd.bear_argument || rnd.bear || {};
+        const bullText = bull.argument || bull.main_argument || JSON.stringify(bull).slice(0, 200);
+        const bearText = bear.argument || bear.main_argument || JSON.stringify(bear).slice(0, 200);
+
+        debateContent.insertAdjacentHTML('beforeend', `
+            <div class="border border-gray-600 rounded p-4 mb-3">
+                <div class="font-semibold text-gray-300 mb-3">Round ${roundNum}</div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-green-900/30 rounded p-3">
+                        <div class="text-green-400 font-semibold text-xs mb-1">BULL</div>
+                        <div class="text-sm text-gray-300">${bullText}</div>
+                    </div>
+                    <div class="bg-red-900/30 rounded p-3">
+                        <div class="text-red-400 font-semibold text-xs mb-1">BEAR</div>
+                        <div class="text-sm text-gray-300">${bearText}</div>
+                    </div>
+                </div>
+            </div>`);
     }
 
     function displayResults(data) {
