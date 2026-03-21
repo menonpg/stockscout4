@@ -212,14 +212,17 @@ class StockScoutPipeline:
         )
         
         return {
-            "fundamentals": (market or {}).get("fundamentals", {}),
-            "technical": (market or {}).get("technical", {}),
-            "macro": (market or {}).get("macro", {}),
-            "quote": (market or {}).get("quote", {}),
-            "sentiment": (pi_intel or {}).get("sentiment", {}),
-            "social_mentions": (pi_intel or {}).get("mentions", {}),
-            "options_flow": (pi_intel or {}).get("options_flow", {}),
-            "trump_signals": trump or {}
+            "fundamentals":   (market or {}).get("fundamentals", {}),
+            "technical":      (market or {}).get("technical", {}),
+            "macro":          (market or {}).get("macro", {}),
+            "quote":          (market or {}).get("quote", {}),
+            "news":           (market or {}).get("news", []),
+            "intel":          (market or {}).get("intel", {}),        # ThinkCreate Intel
+            "ss2_score":      (market or {}).get("ss2_score", {}),    # StockScout v2 score
+            "sentiment":      (pi_intel or {}).get("sentiment", {}),
+            "social_mentions":(pi_intel or {}).get("mentions", {}),
+            "options_flow":   (pi_intel or {}).get("options_flow", {}),
+            "trump_signals":  trump or {}
         }
     
     def _summarize_intel(self, intel: Dict[str, Any]) -> Dict[str, Any]:
