@@ -15,5 +15,11 @@ uvicorn>=0.27.0
 pandas>=2.0.0
 numpy>=1.24.0
 
+# Market data (real-time, no API key)
+yfinance>=0.2.38
+
+# HTTP for FRED + Intel API
+requests>=2.31.0
+
 # Utilities
 python-dotenv>=1.0.0
