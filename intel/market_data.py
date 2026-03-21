@@ -280,58 +280,151 @@ class MarketDataFetcher:
         return await asyncio.to_thread(self._fetch_intel_sync, ticker)
 
     def _fetch_intel_sync(self, ticker: str) -> Dict[str, Any]:
+        """
+        Pulls full ThinkCreate Intel data from both /slow and /fast endpoints.
+        
+        /slow: news, defense stock prices, oil, GDELT, frontlines, earthquakes, space weather
+        /fast: military flights, tracked aircraft, GPS jamming, ship movements
+        """
         try:
-            r = requests.get(INTEL_API_URL, timeout=20, verify=False)
-            d = r.json()
+            # Primary: /slow — rich intelligence data
+            slow = requests.get(INTEL_API_URL, timeout=20, verify=False).json()
 
-            # Oil data
-            wti = d.get("oil", {}).get("WTI Crude", {})
-            brent = d.get("oil", {}).get("Brent Crude", {})
-            oil_price  = wti.get("price", 0) or 0
-            oil_change = wti.get("change_percent", 0) or 0
-            oil_spike  = float(oil_price) > 85 and float(oil_change) > 3.0
+            # Secondary: /fast — real-time tracking counts (lightweight)
+            try:
+                fast = requests.get(
+                    INTEL_API_URL.replace("/slow", "/fast"), timeout=10, verify=False
+                ).json()
+            except Exception:
+                fast = {}
 
-            # Conflict signal from headlines
-            news = d.get("news", [])
+            # ── Oil ──────────────────────────────────────────────────────────
+            wti   = (slow.get("oil") or {}).get("WTI Crude", {})
+            brent = (slow.get("oil") or {}).get("Brent Crude", {})
+            oil_price  = float(wti.get("price", 0) or 0)
+            oil_change = float(wti.get("change_percent", 0) or 0)
+            oil_spike  = oil_price > 85 and oil_change > 3.0
+
+            # ── Defense stocks (live prices from Intel) ───────────────────────
+            defense_stocks = {}
+            for sym, data in (slow.get("stocks") or {}).items():
+                defense_stocks[sym] = {
+                    "price":          data.get("price"),
+                    "change_percent": data.get("change_percent"),
+                    "up":             data.get("up"),
+                }
+            # Average defense sector move
+            defense_changes = [v["change_percent"] for v in defense_stocks.values()
+                                if v["change_percent"] is not None]
+            defense_avg_move = round(sum(defense_changes) / len(defense_changes), 2) if defense_changes else None
+            defense_sector_down = defense_avg_move is not None and defense_avg_move < -1.5
+
+            # ── News + conflict analysis ──────────────────────────────────────
+            news = slow.get("news") or []
             conflict_kw = ["war","strike","attack","conflict","iran","missile","military",
-                           "troops","invasion","sanction","nato","nuclear","hormuz"]
-            conflict_score = sum(
-                1 for item in news
-                if any(kw in (item.get("title","") + item.get("summary","")).lower()
-                       for kw in conflict_kw)
-            )
+                           "troops","invasion","sanction","nato","nuclear","hormuz",
+                           "tariff","escalat","threat","terror"]
+            
+            top_headlines = []
+            conflict_score = 0
+            for item in news[:15]:
+                title   = (item.get("title") or "").lower()
+                summary = (item.get("summary") or "").lower()
+                text    = title + " " + summary
+                matched = [kw for kw in conflict_kw if kw in text]
+                if matched:
+                    conflict_score += 1
+                top_headlines.append({
+                    "title":    item.get("title", ""),
+                    "source":   item.get("source", ""),
+                    "conflict": matched,
+                })
+
             defense_boost = conflict_score >= 3
 
-            # Geo stress from GDELT
-            gdelt_count = len(d.get("gdelt", []))
+            # ── GDELT global incident density ─────────────────────────────────
+            gdelt_count = len(slow.get("gdelt") or [])
             geo_stress  = gdelt_count > 800
 
-            # Ticker-specific: is this a defense name?
+            # ── Space weather ─────────────────────────────────────────────────
+            sw = slow.get("space_weather") or {}
+            kp_index   = sw.get("kp_index", 0)
+            solar_storm = kp_index >= 5
+
+            # ── Internet outages ──────────────────────────────────────────────
+            outages = slow.get("internet_outages") or []
+            critical_outages = sum(1 for o in outages if (o.get("level") or "") == "critical")
+
+            # ── Real-time tracking (from /fast) ───────────────────────────────
+            military_flights   = len(fast.get("military_flights") or [])
+            tracked_aircraft   = len(fast.get("tracked_flights") or [])
+            gps_jamming_events = len(fast.get("gps_jamming") or [])
+            total_ships        = len(fast.get("ships") or [])
+
+            # ── Frontline status (Ukraine war activity) ───────────────────────
+            frontlines = slow.get("frontlines") or {}
+            frontline_features = len((frontlines.get("features") or []))
+            frontline_active = frontline_features > 0
+
+            # ── Ticker relevance ──────────────────────────────────────────────
             defense_tickers = {"RTX","LMT","NOC","GD","BA","HII","TDG","LDOS","SAIC","PLTR",
-                                "KTOS","CACI","MANT","HEICO","HEI","TXT","KRMN"}
+                                "KTOS","CACI","MANT","HEICO","HEI","TXT","KRMN","VST","CEG"}
             is_defense = ticker.upper() in defense_tickers
 
-            # Top news headlines (for analysts)
-            top_headlines = [
-                {"title": n.get("title",""), "source": n.get("source","")}
-                for n in news[:5]
-            ]
+            # ── Analyst-readable summary ──────────────────────────────────────
+            regime_summary = []
+            if oil_spike:
+                regime_summary.append(f"OIL SPIKE: WTI ${oil_price} (+{oil_change}%)")
+            if defense_sector_down:
+                regime_summary.append(f"DEFENSE SECTOR WEAK: avg {defense_avg_move}%")
+            elif defense_boost:
+                regime_summary.append(f"DEFENSE TAILWIND: {conflict_score} conflict headlines")
+            if geo_stress:
+                regime_summary.append(f"ELEVATED GEO STRESS: {gdelt_count} GDELT events")
+            if solar_storm:
+                regime_summary.append(f"SOLAR STORM: Kp={kp_index}")
+            if critical_outages >= 5:
+                regime_summary.append(f"INTERNET DISRUPTIONS: {critical_outages} critical outages")
+            if military_flights > 60:
+                regime_summary.append(f"ELEVATED MILITARY FLIGHTS: {military_flights}")
 
             return {
+                # Oil
                 "oil": {
                     "wti_price":    oil_price,
                     "wti_change":   oil_change,
                     "brent_price":  brent.get("price"),
+                    "brent_change": brent.get("change_percent"),
                     "oil_spike":    oil_spike,
                 },
-                "conflict_score":    conflict_score,
-                "defense_boost":     defense_boost,
-                "geo_stress":        geo_stress,
-                "gdelt_count":       gdelt_count,
-                "is_defense_stock":  is_defense,
-                "top_headlines":     top_headlines,
-                "relevance_score":   min(conflict_score / 10.0, 1.0),
-                "source":            "intel-api.thinkcreateai.com",
+                # Defense sector (live prices from ThinkCreate Intel)
+                "defense_stocks":       defense_stocks,
+                "defense_avg_move":     defense_avg_move,
+                "defense_sector_down":  defense_sector_down,
+                "defense_boost":        defense_boost,
+                # News
+                "top_headlines":        top_headlines[:10],
+                "conflict_score":       conflict_score,
+                # Geo stress
+                "gdelt_count":          gdelt_count,
+                "geo_stress":           geo_stress,
+                # Space + cyber
+                "kp_index":             kp_index,
+                "solar_storm":          solar_storm,
+                "critical_outages":     critical_outages,
+                # Real-time tracking
+                "military_flights":     military_flights,
+                "tracked_aircraft":     tracked_aircraft,
+                "gps_jamming_events":   gps_jamming_events,
+                "total_ships":          total_ships,
+                # War
+                "frontline_active":     frontline_active,
+                # Ticker context
+                "is_defense_stock":     is_defense,
+                "relevance_score":      min(conflict_score / 10.0, 1.0),
+                # One-line analyst summary
+                "regime_flags":         regime_summary,
+                "source":               "intel-api.thinkcreateai.com (/slow + /fast)",
             }
         except Exception as e:
             return {"error": str(e), "source": "intel-api unavailable"}
