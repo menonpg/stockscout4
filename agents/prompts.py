@@ -64,8 +64,12 @@ Trump/political signal context:
 Recent news headlines (use for sentiment context):
 {news_data}
 
-Geopolitical intel (from ThinkCreate Intel):
+ThinkCreate Intel — live geopolitical signals:
 {intel_data}
+
+HOW TO USE: Check `conflict_score` (high = fear/uncertainty in market), `defense_boost` 
+(3+ conflict headlines = defense names get tailwind), `top_headlines` (cite specific events 
+that affect sentiment), `regime_flags` (pre-parsed signal summary for quick context).
 
 Output format:
 ```json
@@ -143,10 +147,25 @@ Analyze:
 Macro data (REAL from FRED — Fed rate, 10Y yield, VIX, unemployment, CPI):
 {macro_data}
 
-Geopolitical intel (from ThinkCreate Intel — oil price, conflict score, defense signals):
+ThinkCreate Intel — LIVE geopolitical + market data:
 {intel_data}
 
-IMPORTANT: Use the actual VIX, yield, and Fed rate values provided. Do not use hardcoded defaults.
+HOW TO USE THE INTEL DATA:
+- `oil.wti_price` + `oil.wti_change` → energy cost pressure on the economy
+- `defense_stocks` → live prices for RTX/LMT/NOC/GD/BA/PLTR — defense sector health
+- `defense_avg_move` → average defense sector % change today
+- `conflict_score` → number of conflict/war/attack headlines (0-15+). >5 = elevated risk
+- `gdelt_count` → global incident density. >800 = elevated geo stress
+- `military_flights` → real-time military aircraft count. >60 = above normal
+- `kp_index` → solar storm intensity. >=5 = can disrupt GPS/comms
+- `critical_outages` → internet infrastructure disruptions
+- `regime_flags` → one-line analyst summary of active risk signals
+- `top_headlines` → cite specific headlines when relevant to macro thesis
+
+IMPORTANT:
+- Use ACTUAL VIX, yield, and Fed rate values from macro_data — do not use hardcoded defaults
+- Use ACTUAL defense stock prices from intel_data.defense_stocks
+- A high conflict_score + high gdelt_count = genuine geopolitical risk-off environment
 
 Output format:
 ```json
