@@ -1,167 +1,125 @@
 """
-StockScout v4 — Trump Signals (v3 Integration)
+StockScout v4 — Trump / Policy Signal Analyzer
 
-Integrates Trump signal decoding from StockScout v3.
+Analyzes recent news for {ticker} to detect:
+- Trump/presidential mentions
+- Tariff/trade policy signals
+- Sector-specific political catalysts
+
+Uses Yahoo Finance news (via yfinance) + keyword analysis.
+No fake API endpoints. No hardcoded data.
 """
 
-import aiohttp
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+import asyncio
+from typing import Dict, Any, List
+from datetime import datetime
+
+
+# Keywords that indicate strong political/policy signal
+TRUMP_KEYWORDS = [
+    "trump", "tariff", "trade war", "executive order", "white house",
+    "president", "administration", "commerce department", "sec investigation",
+    "doge", "doge cut", "federal contract", "defense contract", "export ban",
+    "chip ban", "china tariff", "sanctions", "deregulation", "energy policy",
+]
+
+SECTOR_POLICY_MAP = {
+    # Sectors that are highly politically sensitive
+    "Technology":        ["chip ban", "export control", "huawei", "tiktok", "antitrust"],
+    "Energy":            ["pipeline", "lng", "energy dominance", "drill", "epa", "paris accord"],
+    "Defense":           ["defense budget", "nato", "ukraine", "military", "lockheed", "raytheon"],
+    "Financial Services":["deregulation", "cfpb", "dodd-frank", "fed appointment"],
+    "Healthcare":        ["drug price", "medicare", "obamacare", "fda", "insulin"],
+    "Consumer Cyclical": ["tariff", "china goods", "trade deal", "usmca"],
+    "Industrials":       ["infrastructure", "steel tariff", "buy american"],
+}
 
 
 class TrumpSignals:
     """
-    Interface to StockScout v3's Trump signal decoder.
+    Analyzes Trump/policy signals for a ticker using real news.
     
-    v3 analyzes:
-    - Truth Social posts
-    - Policy announcements
-    - Tariff/trade signals
-    - Sector-specific mentions
-    
-    Extracts trading signals from presidential communications.
+    Sources:
+    - yfinance news (ticker-specific headlines)
+    - Keyword pattern matching (no LLM call — fast, cheap)
     """
-    
+
     def __init__(self, config):
         self.config = config
         self.enabled = config.TRUMP_V3_ENABLED
-        # In production, this would point to StockScout v3 API
-        self.v3_url = "https://stockscout.thinkcreate.ai/api/v3"
-    
+
     async def get_signals(self, ticker: str) -> Dict[str, Any]:
-        """
-        Get Trump-related signals for a ticker.
-        
-        Returns:
-            Dict with relevance score, recent mentions, sentiment
-        """
         if not self.enabled:
             return {"enabled": False, "note": "Trump signals disabled"}
-        
+
+        return await asyncio.to_thread(self._analyze_sync, ticker)
+
+    def _analyze_sync(self, ticker: str) -> Dict[str, Any]:
         try:
-            # Check for direct ticker mentions
-            mentions = await self._check_direct_mentions(ticker)
-            
-            # Check for sector/industry relevance
-            sector_signal = await self._check_sector_relevance(ticker)
-            
-            # Check for policy impact
-            policy_impact = await self._check_policy_impact(ticker)
-            
+            import yfinance as yf
+            t = yf.Ticker(ticker)
+            info  = t.info or {}
+            news  = t.news  or []
+            sector = info.get("sector", "")
+
+            # Analyze headlines for Trump/policy keywords
+            mentions = []
+            for item in news[:20]:
+                title   = (item.get("title", "") or "").lower()
+                summary = (item.get("summary", "") or "").lower()
+                text    = title + " " + summary
+
+                matched_kw = [kw for kw in TRUMP_KEYWORDS if kw in text]
+                sector_kw  = [kw for kw in SECTOR_POLICY_MAP.get(sector, []) if kw in text]
+
+                if matched_kw or sector_kw:
+                    mentions.append({
+                        "headline":     item.get("title", ""),
+                        "publisher":    item.get("publisher", ""),
+                        "trump_kw":     matched_kw,
+                        "sector_kw":    sector_kw,
+                    })
+
+            relevance_score = min(len(mentions) / 5.0, 1.0)
+
+            # Determine directional signal
+            positive_kw = ["deregulation", "defense contract", "federal contract",
+                           "infrastructure", "buy american", "energy dominance"]
+            negative_kw = ["tariff", "ban", "sanction", "antitrust", "investigation",
+                           "chip ban", "export ban"]
+
+            all_matched = " ".join(
+                " ".join(m["trump_kw"] + m["sector_kw"]) for m in mentions
+            )
+            positive_hits = sum(1 for kw in positive_kw if kw in all_matched)
+            negative_hits = sum(1 for kw in negative_kw if kw in all_matched)
+
+            if positive_hits > negative_hits:
+                overall_signal = "bullish"
+            elif negative_hits > positive_hits:
+                overall_signal = "bearish"
+            else:
+                overall_signal = "neutral"
+
             return {
-                "ticker": ticker,
-                "relevance_score": self._calculate_relevance(mentions, sector_signal, policy_impact),
-                "direct_mentions": mentions,
-                "sector_signal": sector_signal,
-                "policy_impact": policy_impact,
-                "overall_signal": self._synthesize_signal(mentions, sector_signal, policy_impact),
-                "fetched_at": datetime.utcnow().isoformat()
+                "ticker":          ticker,
+                "enabled":         True,
+                "relevance_score": round(relevance_score, 2),
+                "mention_count":   len(mentions),
+                "overall_signal":  overall_signal,
+                "direct_mentions": mentions[:5],
+                "sector":          sector,
+                "sector_sensitive": sector in SECTOR_POLICY_MAP,
+                "note":            f"Analyzed {len(news)} recent headlines via yfinance",
+                "fetched_at":      datetime.utcnow().isoformat(),
             }
+
         except Exception as e:
-            return self._fallback_response(ticker, str(e))
-    
-    async def _check_direct_mentions(self, ticker: str) -> Dict[str, Any]:
-        """Check for direct mentions of company/ticker in recent posts."""
-        # In production, would query v3 API
-        # For now, return structure showing what we'd get
-        return {
-            "mentioned": False,
-            "mention_count_7d": 0,
-            "latest_mention": None,
-            "sentiment_when_mentioned": None,
-            "note": "Connect to StockScout v3 API for live data"
-        }
-    
-    async def _check_sector_relevance(self, ticker: str) -> Dict[str, Any]:
-        """Check if recent posts are relevant to ticker's sector."""
-        # Maps sectors to Trump policy themes
-        sector_themes = {
-            "Technology": ["chips", "AI", "China", "TikTok", "semiconductors"],
-            "Energy": ["oil", "gas", "drilling", "energy independence", "green"],
-            "Financials": ["banks", "rates", "Fed", "regulations"],
-            "Healthcare": ["pharma", "drug prices", "healthcare"],
-            "Industrials": ["tariffs", "manufacturing", "jobs", "infrastructure"],
-            "Consumer": ["tariffs", "China", "retail"],
-            "Defense": ["military", "defense", "NATO", "spending"]
-        }
-        
-        return {
-            "sector_mentioned": False,
-            "relevant_themes": [],
-            "sentiment": "neutral",
-            "note": "Connect to StockScout v3 for sector signal analysis"
-        }
-    
-    async def _check_policy_impact(self, ticker: str) -> Dict[str, Any]:
-        """Analyze potential policy impact on ticker."""
-        return {
-            "tariff_exposure": "unknown",
-            "regulatory_risk": "unknown",
-            "subsidy_potential": "unknown",
-            "policy_tailwinds": [],
-            "policy_headwinds": [],
-            "note": "Connect to StockScout v3 for policy analysis"
-        }
-    
-    def _calculate_relevance(
-        self,
-        mentions: Dict,
-        sector: Dict,
-        policy: Dict
-    ) -> float:
-        """Calculate overall Trump signal relevance (0-1)."""
-        score = 0.0
-        
-        # Direct mention is highly relevant
-        if mentions.get("mentioned"):
-            score += 0.5
-        
-        # Sector relevance
-        if sector.get("sector_mentioned"):
-            score += 0.3
-        
-        # Policy impact
-        if policy.get("tariff_exposure") == "high":
-            score += 0.2
-        
-        return min(score, 1.0)
-    
-    def _synthesize_signal(
-        self,
-        mentions: Dict,
-        sector: Dict,
-        policy: Dict
-    ) -> str:
-        """Synthesize into actionable signal."""
-        # Simplified logic - in production would be more sophisticated
-        if mentions.get("mentioned") and mentions.get("sentiment_when_mentioned") == "positive":
-            return "bullish"
-        elif mentions.get("mentioned") and mentions.get("sentiment_when_mentioned") == "negative":
-            return "bearish"
-        elif sector.get("sentiment") in ["bullish", "positive"]:
-            return "slightly_bullish"
-        elif sector.get("sentiment") in ["bearish", "negative"]:
-            return "slightly_bearish"
-        else:
-            return "neutral"
-    
-    def _fallback_response(self, ticker: str, error: str = None) -> Dict[str, Any]:
-        """Return when v3 integration fails."""
-        return {
-            "ticker": ticker,
-            "relevance_score": 0.0,
-            "direct_mentions": {"mentioned": False},
-            "sector_signal": {"sector_mentioned": False},
-            "policy_impact": {},
-            "overall_signal": "neutral",
-            "note": "StockScout v3 unavailable",
-            "error": error
-        }
-    
-    async def get_recent_posts(self, hours: int = 24) -> List[Dict[str, Any]]:
-        """Get recent Trump posts with market relevance analysis."""
-        # Would fetch from v3 API
-        return [{
-            "note": "Connect to StockScout v3 for recent posts",
-            "placeholder": True
-        }]
+            return {
+                "ticker":          ticker,
+                "enabled":         True,
+                "relevance_score": 0.0,
+                "overall_signal":  "neutral",
+                "error":           str(e),
+                "note":            "Signal analysis failed — neutral assumed",
+            }
