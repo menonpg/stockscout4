@@ -161,6 +161,143 @@ class StockScoutPipeline:
         
         return result
     
+
+    async def analyze_streaming(
+        self,
+        ticker: str,
+        portfolio_state: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Async generator version of analyze().
+        Yields SSE-style dicts at each stage so the UI can update in real-time.
+        
+        Yields dicts with keys: step, message, progress, [data]
+        """
+        start_time = datetime.utcnow()
+
+        if portfolio_state is None:
+            portfolio_state = {
+                "cash": 100000,
+                "positions": {},
+                "sector_exposure": {},
+                "strategy": {"style": "growth", "risk_tolerance": "moderate", "time_horizon": "medium-term"}
+            }
+
+        yield {"step": "intel", "message": f"Gathering live intel for {ticker}...", "progress": 5}
+
+        intel = await self._gather_intel(ticker)
+        intel_summary = self._summarize_intel(intel)
+
+        yield {"step": "intel_done", "message": "Intel gathered", "progress": 15, "data": intel_summary}
+
+        # Run analysts one by one so each result can stream to the UI
+        analyst_names = ["fundamentals", "technical", "sentiment", "macro"]
+        analyst_labels = {
+            "fundamentals": "Fundamentals analyst",
+            "technical":    "Technical analyst",
+            "sentiment":    "Sentiment analyst",
+            "macro":        "Macro analyst",
+        }
+        analyst_progress = [25, 38, 51, 64]
+        analyst_reports = {}
+
+        for i, name in enumerate(analyst_names):
+            yield {
+                "step": f"analyst_{name}",
+                "message": f"Running {analyst_labels[name]}...",
+                "progress": analyst_progress[i] - 5,
+            }
+            # Run a single analyst by temporarily filtering the analyst team
+            single = await self.analysts.analyze_single(name, ticker, intel)
+            analyst_reports[name] = single
+            yield {
+                "step": f"analyst_{name}_done",
+                "message": f"{analyst_labels[name]} complete",
+                "progress": analyst_progress[i],
+                "data": {
+                    "name":       name,
+                    "score":      single.score,
+                    "confidence": single.confidence,
+                    "key_points": single.key_points,
+                    "risks":      single.risks,
+                    "reasoning":  single.reasoning,
+                },
+            }
+
+        analyst_summary = self.analysts.summarize_reports(analyst_reports)
+
+        # Debate
+        yield {"step": "debate", "message": "Starting Bull vs Bear debate...", "progress": 68}
+
+        synthesis = await self.debate.debate(ticker, analyst_summary)
+
+        # Yield each debate round
+        if synthesis.rounds:
+            for i, rnd in enumerate(synthesis.rounds):
+                round_dict = rnd if isinstance(rnd, dict) else (rnd.__dict__ if hasattr(rnd, "__dict__") else {})
+                yield {
+                    "step": f"debate_round_{i+1}",
+                    "message": f"Debate round {i+1} complete",
+                    "progress": 70 + i * 5,
+                    "data": round_dict,
+                }
+
+        yield {"step": "decision", "message": "Trading desk processing decision...", "progress": 88}
+
+        synthesis_dict = {
+            "ticker": synthesis.ticker,
+            "net_score": synthesis.net_score,
+            "conviction": synthesis.conviction,
+            "recommended_action": synthesis.recommended_action,
+            "bull_strength": synthesis.bull_strength,
+            "bear_strength": synthesis.bear_strength,
+            "key_agreements": synthesis.key_agreements,
+            "key_disagreements": synthesis.key_disagreements,
+            "reasoning": synthesis.reasoning
+        }
+        decision = await self.trading_desk.process_trade(
+            ticker=ticker,
+            synthesis=synthesis_dict,
+            portfolio_state=portfolio_state
+        )
+
+        result = {
+            "ticker": ticker,
+            "timestamp": start_time.isoformat(),
+            "duration_seconds": (datetime.utcnow() - start_time).total_seconds(),
+            "intel_summary": intel_summary,
+            "analyst_scores": {
+                name: {
+                    "score":      r.score,
+                    "confidence": r.confidence,
+                    "key_points": r.key_points,
+                    "risks":      r.risks,
+                    "reasoning":  r.reasoning,
+                }
+                for name, r in analyst_reports.items()
+            },
+            "debate_synthesis": {
+                **synthesis_dict,
+                "unresolved_questions": synthesis.unresolved_questions,
+                "rounds": synthesis.rounds,
+            },
+            "final_decision": {
+                "decision":      decision.decision.value,
+                "size_pct":      decision.final_size_pct,
+                "entry":         decision.entry_type,
+                "stop_loss":     decision.stop_loss,
+                "targets":       decision.targets,
+                "reject_reason": decision.reject_reason,
+                "defer_until":   decision.defer_until,
+                "pm_notes":      decision.pm_notes,
+            }
+        }
+
+        if self.memory:
+            await self.memory.store_analysis(result)
+
+        yield {"step": "complete", "message": "Analysis complete!", "progress": 100, "result": result}
+
     async def morning_brief(
         self,
         watchlist: Optional[List[str]] = None,
