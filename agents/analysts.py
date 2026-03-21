@@ -90,6 +90,24 @@ class AnalystTeam:
         
         return reports
     
+
+    async def analyze_single(
+        self,
+        analyst_name: str,
+        ticker: str,
+        intel_data: Dict[str, Any]
+    ) -> "AnalystReport":
+        """Run a single named analyst — used for streaming pipeline."""
+        prompt_template = self.analysts.get(analyst_name)
+        if not prompt_template:
+            raise ValueError(f"Unknown analyst: {analyst_name}")
+        return await self._run_analyst(
+            ticker=ticker,
+            analyst_name=analyst_name,
+            prompt_template=prompt_template,
+            intel_data=intel_data
+        )
+
     async def _run_analyst(
         self,
         ticker: str,
