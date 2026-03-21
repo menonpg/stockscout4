@@ -5,8 +5,8 @@ Bull vs Bear researchers debate the trade thesis.
 """
 
 import json
-from typing import Dict, Any, List
-from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
 
 try:
     from .prompts import BULL_RESEARCHER, BEAR_RESEARCHER, DEBATE_SYNTHESIZER
@@ -35,6 +35,7 @@ class DebateSynthesis:
     key_disagreements: List[str]
     unresolved_questions: List[str]
     reasoning: str
+    rounds: List[Dict] = field(default_factory=list)  # full debate transcript
 
 
 class DebateEngine:
@@ -61,12 +62,8 @@ class DebateEngine:
         """
         Run the full bull/bear debate.
         
-        Args:
-            ticker: Stock symbol
-            analyst_reports: Summary from AnalystTeam.summarize_reports()
-        
         Returns:
-            DebateSynthesis with final recommendation
+            DebateSynthesis with final recommendation AND full rounds transcript
         """
         rounds: List[DebateRound] = []
         debate_history = []
@@ -120,6 +117,16 @@ class DebateEngine:
             debate_transcript="\n".join(debate_history)
         )
         
+        # Attach full debate transcript to synthesis
+        synthesis.rounds = [
+            {
+                "round": r.round_number,
+                "bull": r.bull_argument,
+                "bear": r.bear_argument
+            }
+            for r in rounds
+        ]
+        
         return synthesis
     
     async def _run_researcher(
@@ -172,7 +179,7 @@ class DebateEngine:
         )
         
         data = self._extract_json(response)
-        synthesis = data.get("synthesis", {})
+        synthesis = data.get("synthesis") or {}
         
         return DebateSynthesis(
             ticker=ticker,
@@ -203,7 +210,8 @@ class DebateEngine:
         
         # Try direct parse first
         try:
-            return json.loads(text)
+            result = json.loads(text)
+            return result if isinstance(result, dict) else {}
         except json.JSONDecodeError:
             pass
         
@@ -211,17 +219,10 @@ class DebateEngine:
         json_match = re.search(r'\{[\s\S]*\}', text)
         if json_match:
             try:
-                return json.loads(json_match.group())
+                result = json.loads(json_match.group())
+                return result if isinstance(result, dict) else {}
             except json.JSONDecodeError:
                 pass
-        
-        # Try to fix common issues: unescaped quotes in strings
-        try:
-            # Replace problematic characters
-            cleaned = text.replace('\n', ' ').replace('\r', '')
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            pass
         
         # Return a default structure if all parsing fails
         return {
