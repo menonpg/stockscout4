@@ -226,10 +226,18 @@ class StockScoutPipeline:
 
         analyst_summary = self.analysts.summarize_reports(analyst_reports)
 
-        # Debate
-        yield {"step": "debate", "message": "Starting Bull vs Bear debate...", "progress": 68}
+        # Debate — run as background task with keepalives every 4s
+        # (Sonnet 4.5 debate can take 30-60s; SSE dies without keepalives)
+        yield {"step": "debate", "message": "Bull vs Bear debate starting...", "progress": 68}
 
-        synthesis = await self.debate.debate(ticker, analyst_summary)
+        debate_task = asyncio.create_task(self.debate.debate(ticker, analyst_summary))
+        ping = 0
+        while not debate_task.done():
+            await asyncio.sleep(4)
+            ping += 1
+            yield {"step": "keepalive", "message": f"Debate in progress ({ping * 4}s)...", "progress": min(68 + ping, 85)}
+
+        synthesis = debate_task.result()
 
         # Yield each debate round
         if synthesis.rounds:
@@ -238,11 +246,11 @@ class StockScoutPipeline:
                 yield {
                     "step": f"debate_round_{i+1}",
                     "message": f"Debate round {i+1} complete",
-                    "progress": 70 + i * 5,
+                    "progress": 86 + i * 2,
                     "data": round_dict,
                 }
 
-        yield {"step": "decision", "message": "Trading desk processing decision...", "progress": 88}
+        yield {"step": "decision", "message": "Trading desk processing decision...", "progress": 90}
 
         synthesis_dict = {
             "ticker": synthesis.ticker,
@@ -255,11 +263,17 @@ class StockScoutPipeline:
             "key_disagreements": synthesis.key_disagreements,
             "reasoning": synthesis.reasoning
         }
-        decision = await self.trading_desk.process_trade(
+        decision_task = asyncio.create_task(self.trading_desk.process_trade(
             ticker=ticker,
             synthesis=synthesis_dict,
             portfolio_state=portfolio_state
-        )
+        ))
+        ping2 = 0
+        while not decision_task.done():
+            await asyncio.sleep(4)
+            ping2 += 1
+            yield {"step": "keepalive", "message": f"Trading desk deliberating ({ping2 * 4}s)...", "progress": min(91 + ping2, 98)}
+        decision = decision_task.result()
 
         result = {
             "ticker": ticker,
