@@ -5,6 +5,7 @@ Trader Agent → Risk Manager → Portfolio Manager decision chain.
 """
 
 import json
+import re
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -95,14 +96,6 @@ class TradingDesk:
     ) -> FinalTradeDecision:
         """
         Run the full trading desk decision process.
-        
-        Args:
-            ticker: Stock symbol
-            synthesis: Output from DebateEngine
-            portfolio_state: Current portfolio holdings and metrics
-        
-        Returns:
-            FinalTradeDecision
         """
         # Step 1: Trader formulates proposal
         proposal = await self._trader_propose(ticker, synthesis, portfolio_state)
@@ -207,7 +200,8 @@ class TradingDesk:
         )
         
         data = self._extract_json(response)
-        risk = data.get("risk_assessment", {})
+        # null-safety: if risk_assessment key is null/missing, use empty dict
+        risk = data.get("risk_assessment") or {}
         
         return RiskAssessment(
             ticker=proposal.ticker,
@@ -259,7 +253,8 @@ class TradingDesk:
         )
         
         data = self._extract_json(response)
-        exec_data = data.get("if_execute", {})
+        # null-safety: if if_execute key is null/missing, use empty dict
+        exec_data = data.get("if_execute") or {}
         
         return FinalTradeDecision(
             ticker=proposal.ticker,
@@ -274,7 +269,7 @@ class TradingDesk:
         )
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
-        """Extract JSON from LLM response."""
+        """Extract JSON from LLM response — robust with fallback (no crashes on null/malformed)."""
         if "```json" in text:
             start = text.find("```json") + 7
             end = text.find("```", start)
@@ -284,4 +279,24 @@ class TradingDesk:
             end = text.find("```", start)
             text = text[start:end].strip()
         
-        return json.loads(text)
+        # Direct parse
+        try:
+            result = json.loads(text)
+            return result if isinstance(result, dict) else {}
+        except json.JSONDecodeError:
+            pass
+        
+        # Try to find JSON object in text
+        json_match = re.search(r'\{[\s\S]*\}', text)
+        if json_match:
+            try:
+                result = json.loads(json_match.group())
+                return result if isinstance(result, dict) else {}
+            except json.JSONDecodeError:
+                pass
+        
+        # Final fallback — never return None
+        return {
+            "parse_error": True,
+            "raw_text": text[:500]
+        }
