@@ -349,6 +349,11 @@ HTML_TEMPLATE = """
                     return;
                 }
 
+                if (data.step === 'keepalive') {
+                    // Keepalive ping — just update status, don't trigger any rendering
+                    updateStatus('⏳', data.message, `${data.progress}% complete`, data.progress);
+                    return;
+                }
                 updateStatus('⏳', data.message, `${data.progress}% complete`, data.progress);
             };
 
