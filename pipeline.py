@@ -72,13 +72,6 @@ class StockScoutPipeline:
     ) -> Dict[str, Any]:
         """
         Run full analysis pipeline for a single ticker.
-        
-        Args:
-            ticker: Stock symbol (e.g., "NVDA")
-            portfolio_state: Current portfolio for position sizing
-        
-        Returns:
-            Complete analysis with decision
         """
         start_time = datetime.utcnow()
         
@@ -127,17 +120,29 @@ class StockScoutPipeline:
             portfolio_state=portfolio_state
         )
         
-        # Build result
+        # Build result — include full debate transcript and analyst details
         result = {
             "ticker": ticker,
             "timestamp": start_time.isoformat(),
             "duration_seconds": (datetime.utcnow() - start_time).total_seconds(),
             "intel_summary": self._summarize_intel(intel),
+            # Full analyst details (score + key_points + reasoning)
             "analyst_scores": {
-                name: {"score": r.score, "confidence": r.confidence}
+                name: {
+                    "score": r.score,
+                    "confidence": r.confidence,
+                    "key_points": r.key_points,
+                    "risks": r.risks,
+                    "reasoning": r.reasoning
+                }
                 for name, r in analyst_reports.items()
             },
-            "debate_synthesis": synthesis_dict,
+            # Debate synthesis + full round transcripts
+            "debate_synthesis": {
+                **synthesis_dict,
+                "unresolved_questions": synthesis.unresolved_questions,
+                "rounds": synthesis.rounds  # full bull/bear arguments per round
+            },
             "final_decision": {
                 "decision": decision.decision.value,
                 "size_pct": decision.final_size_pct,
@@ -161,16 +166,7 @@ class StockScoutPipeline:
         watchlist: Optional[List[str]] = None,
         portfolio_state: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Generate morning market brief for watchlist.
-        
-        Args:
-            watchlist: List of tickers to analyze
-            portfolio_state: Current portfolio
-        
-        Returns:
-            Combined brief with all analyses
-        """
+        """Generate morning market brief for watchlist."""
         if watchlist is None:
             watchlist = self.config.DEFAULT_WATCHLIST
         
@@ -207,7 +203,6 @@ class StockScoutPipeline:
     
     async def _gather_intel(self, ticker: str) -> Dict[str, Any]:
         """Gather all intel for a ticker."""
-        # Run data fetches in parallel
         market_task = self.market_data.get_all_data(ticker)
         pi_task = self.pi_scanner.get_all_intel(ticker)
         trump_task = self.trump_signals.get_signals(ticker)
@@ -217,24 +212,24 @@ class StockScoutPipeline:
         )
         
         return {
-            "fundamentals": market.get("fundamentals", {}),
-            "technical": market.get("technical", {}),
-            "macro": market.get("macro", {}),
-            "quote": market.get("quote", {}),
-            "sentiment": pi_intel.get("sentiment", {}),
-            "social_mentions": pi_intel.get("mentions", {}),
-            "options_flow": pi_intel.get("options_flow", {}),
-            "trump_signals": trump
+            "fundamentals": (market or {}).get("fundamentals", {}),
+            "technical": (market or {}).get("technical", {}),
+            "macro": (market or {}).get("macro", {}),
+            "quote": (market or {}).get("quote", {}),
+            "sentiment": (pi_intel or {}).get("sentiment", {}),
+            "social_mentions": (pi_intel or {}).get("mentions", {}),
+            "options_flow": (pi_intel or {}).get("options_flow", {}),
+            "trump_signals": trump or {}
         }
     
     def _summarize_intel(self, intel: Dict[str, Any]) -> Dict[str, Any]:
         """Create a compact summary of intel for output."""
-        quote = intel.get("quote", {})
+        quote = intel.get("quote") or {}
         return {
             "current_price": quote.get("price"),
             "change_pct": quote.get("change_pct"),
-            "sentiment": intel.get("sentiment", {}).get("overall_sentiment"),
-            "trump_relevance": intel.get("trump_signals", {}).get("relevance_score", 0)
+            "sentiment": (intel.get("sentiment") or {}).get("overall_sentiment"),
+            "trump_relevance": (intel.get("trump_signals") or {}).get("relevance_score", 0)
         }
     
     def _generate_brief_summary(self, results: List[Dict]) -> str:
