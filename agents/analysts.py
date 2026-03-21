@@ -100,13 +100,21 @@ class AnalystTeam:
         """Run a single analyst and parse response."""
         
         # Build prompt with relevant data
+        # Build context dict — includes real data from yfinance, FRED, Intel, SS2
+        news_summary = [
+            {"title": n.get("title"), "publisher": n.get("publisher")}
+            for n in (intel_data.get("news") or [])[:5]
+        ]
         prompt = prompt_template.format(
             ticker=ticker,
             fundamentals_data=json.dumps(intel_data.get("fundamentals", {}), indent=2),
             sentiment_data=json.dumps(intel_data.get("sentiment", {}), indent=2),
             trump_signals=json.dumps(intel_data.get("trump_signals", {}), indent=2),
             technical_data=json.dumps(intel_data.get("technical", {}), indent=2),
-            macro_data=json.dumps(intel_data.get("macro", {}), indent=2)
+            macro_data=json.dumps(intel_data.get("macro", {}), indent=2),
+            news_data=json.dumps(news_summary, indent=2),
+            intel_data=json.dumps(intel_data.get("intel", {}), indent=2),
+            ss2_score=json.dumps(intel_data.get("ss2_score", {}), indent=2),
         )
         
         # Call LLM
