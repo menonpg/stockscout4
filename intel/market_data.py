@@ -19,7 +19,7 @@ import yfinance as yf
 import numpy as np
 
 
-FRED_KEY      = "4b10e4313ff2d2784d439bee0bb58893"  # Pi's FRED key (same free tier)
+# URLs — not secrets, fine as constants
 INTEL_API_URL = "https://intel-api.thinkcreateai.com/api/live-data/slow"
 SS2_BASE_URL  = "https://stockscout.thinkcreateai.com/stockscout2/data"
 
@@ -37,7 +37,9 @@ class MarketDataFetcher:
 
     def __init__(self, config):
         self.config = config
-        self.fred_key = getattr(config, "FRED_API_KEY", None) or FRED_KEY
+        self.fred_key = getattr(config, "FRED_API_KEY", None)
+        if not self.fred_key:
+            raise ValueError("FRED_API_KEY env var is required — set it in Railway")
 
     async def get_all_data(self, ticker: str) -> Dict[str, Any]:
         """Fetch all data in parallel."""
