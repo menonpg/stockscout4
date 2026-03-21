@@ -22,6 +22,12 @@ Analyze:
 Data provided:
 {fundamentals_data}
 
+StockScout v2 score (Pi's quantitative scorer):
+{ss2_score}
+
+Recent news headlines:
+{news_data}
+
 Output format:
 ```json
 {{
@@ -52,8 +58,14 @@ Analyze:
 Data provided:
 {sentiment_data}
 
-Trump signal context (from StockScout v3):
+Trump/political signal context:
 {trump_signals}
+
+Recent news headlines (use for sentiment context):
+{news_data}
+
+Geopolitical intel (from ThinkCreate Intel):
+{intel_data}
 
 Output format:
 ```json
@@ -83,8 +95,14 @@ Analyze:
 4. **Volume** — Accumulation/distribution, volume trends
 5. **Patterns** — Chart patterns, breakout/breakdown setups
 
-Data provided:
+Data provided (REAL market data — RSI, MACD, price history, volume ratio):
 {technical_data}
+
+StockScout v2 quantitative score (VST signal):
+{ss2_score}
+
+IMPORTANT: If technical_data contains actual RSI, MACD, SMA, and price values, use them directly.
+Score confidence HIGH if you have real data. Do not say "data unavailable" if data is present.
 
 Output format:
 ```json
@@ -122,8 +140,13 @@ Analyze:
 4. **Geopolitical** — Trade policy, regulations, global risks
 5. **Liquidity** — Market breadth, credit spreads, VIX
 
-Data provided:
+Macro data (REAL from FRED — Fed rate, 10Y yield, VIX, unemployment, CPI):
 {macro_data}
+
+Geopolitical intel (from ThinkCreate Intel — oil price, conflict score, defense signals):
+{intel_data}
+
+IMPORTANT: Use the actual VIX, yield, and Fed rate values provided. Do not use hardcoded defaults.
 
 Output format:
 ```json
