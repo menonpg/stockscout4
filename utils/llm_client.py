@@ -2,6 +2,7 @@
 StockScout v4 — LLM Client
 
 Unified interface for multiple LLM providers.
+Default: Azure OpenAI (Anthropic available as fallback via SS4_LLM_PROVIDER=anthropic)
 """
 
 import os
@@ -13,17 +14,23 @@ import openai
 class LLMClient:
     """
     Unified LLM client supporting multiple providers:
-    - Anthropic (Claude)
-    - OpenAI (GPT)
-    - Ollama (local)
+    - azure_openai (default) — Azure-hosted GPT-4o
+    - anthropic              — Claude (set SS4_LLM_PROVIDER=anthropic)
+    - openai                 — OpenAI direct
+    - ollama                 — Local Ollama
     """
-    
+
     def __init__(self, config):
         self.config = config
         self.provider = config.LLM_PROVIDER
-        
-        # Initialize clients based on provider
-        if self.provider == "anthropic":
+
+        if self.provider == "azure_openai":
+            self.client = openai.AsyncAzureOpenAI(
+                api_key=config.AZURE_OPENAI_API_KEY,
+                azure_endpoint=config.AZURE_OPENAI_ENDPOINT,
+                api_version=config.AZURE_OPENAI_API_VERSION,
+            )
+        elif self.provider == "anthropic":
             self.client = anthropic.AsyncAnthropic(
                 api_key=config.ANTHROPIC_API_KEY
             )
@@ -32,14 +39,13 @@ class LLMClient:
                 api_key=config.OPENAI_API_KEY
             )
         elif self.provider == "ollama":
-            # Ollama uses OpenAI-compatible API
             self.client = openai.AsyncOpenAI(
                 base_url="http://localhost:11434/v1",
                 api_key="ollama"
             )
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
-    
+
     async def complete(
         self,
         prompt: str,
@@ -49,23 +55,24 @@ class LLMClient:
     ) -> str:
         """
         Generate completion from LLM.
-        
+
         Args:
-            prompt: The prompt text
+            prompt:      The prompt text
             temperature: Sampling temperature (0-1)
-            model: Model name (uses config default if not specified)
-            max_tokens: Maximum tokens in response
-        
+            model:       Model/deployment name (uses config default if not specified)
+            max_tokens:  Maximum tokens in response
+
         Returns:
             Generated text
         """
         model = model or self.config.QUICK_THINK_MODEL
-        
+
         if self.provider == "anthropic":
             return await self._complete_anthropic(prompt, temperature, model, max_tokens)
         else:
+            # azure_openai, openai, ollama all use the OpenAI-compatible path
             return await self._complete_openai(prompt, temperature, model, max_tokens)
-    
+
     async def _complete_anthropic(
         self,
         prompt: str,
@@ -78,12 +85,10 @@ class LLMClient:
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.content[0].text
-    
+
     async def _complete_openai(
         self,
         prompt: str,
@@ -91,13 +96,19 @@ class LLMClient:
         model: str,
         max_tokens: int
     ) -> str:
-        """OpenAI/Ollama completion."""
+        """Azure OpenAI / OpenAI / Ollama completion.
+
+        For Azure, `model` maps to the deployment name
+        (set via SS4_DEEP_MODEL / SS4_QUICK_MODEL or AZURE_OPENAI_DEPLOYMENT).
+        """
+        # For Azure, use the configured deployment name if model matches default
+        if self.provider == "azure_openai":
+            model = model or self.config.AZURE_OPENAI_DEPLOYMENT
+
         response = await self.client.chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content

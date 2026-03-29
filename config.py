@@ -8,14 +8,21 @@ from typing import Optional
 
 class Config:
     # ── LLM Provider ─────────────────────────────────────────────────────────
-    LLM_PROVIDER: str       = os.getenv("SS4_LLM_PROVIDER", "anthropic")
-    DEEP_THINK_MODEL: str   = os.getenv("SS4_DEEP_MODEL",   "claude-3-5-sonnet-20241022")
-    QUICK_THINK_MODEL: str  = os.getenv("SS4_QUICK_MODEL",  "claude-3-5-sonnet-20241022")
+    # Options: "azure_openai" | "anthropic" | "openai" | "ollama"
+    LLM_PROVIDER: str       = os.getenv("SS4_LLM_PROVIDER", "azure_openai")
+    DEEP_THINK_MODEL: str   = os.getenv("SS4_DEEP_MODEL",   "gpt-4o")
+    QUICK_THINK_MODEL: str  = os.getenv("SS4_QUICK_MODEL",  "gpt-4o")
 
     # ── LLM API Keys ─────────────────────────────────────────────────────────
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     OPENAI_API_KEY:    Optional[str] = os.getenv("OPENAI_API_KEY")
     GEMINI_API_KEY:    Optional[str] = os.getenv("GEMINI_API_KEY")
+
+    # ── Azure OpenAI (default provider) ──────────────────────────────────────
+    AZURE_OPENAI_API_KEY:     Optional[str] = os.getenv("AZURE_OPENAI_API_KEY")
+    AZURE_OPENAI_ENDPOINT:    Optional[str] = os.getenv("AZURE_OPENAI_ENDPOINT")
+    AZURE_OPENAI_API_VERSION: str           = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+    AZURE_OPENAI_DEPLOYMENT:  str           = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
     # ── Market Data API Keys ──────────────────────────────────────────────────
     ALPHA_VANTAGE_API_KEY: Optional[str] = os.getenv("ALPHA_VANTAGE_API_KEY")
