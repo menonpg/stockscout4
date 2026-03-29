@@ -19,10 +19,11 @@ class Config:
     GEMINI_API_KEY:    Optional[str] = os.getenv("GEMINI_API_KEY")
 
     # ── Azure OpenAI (default provider) ──────────────────────────────────────
-    AZURE_OPENAI_API_KEY:     Optional[str] = os.getenv("AZURE_OPENAI_API_KEY")
+    # Accepts both AZURE_OPENAI_API_KEY and AZURE_OPENAI_KEY (Railway convention)
+    AZURE_OPENAI_API_KEY:     Optional[str] = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_KEY")
     AZURE_OPENAI_ENDPOINT:    Optional[str] = os.getenv("AZURE_OPENAI_ENDPOINT")
     AZURE_OPENAI_API_VERSION: str           = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
-    AZURE_OPENAI_DEPLOYMENT:  str           = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    AZURE_OPENAI_DEPLOYMENT:  str           = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5-chat")
 
     # ── Market Data API Keys ──────────────────────────────────────────────────
     ALPHA_VANTAGE_API_KEY: Optional[str] = os.getenv("ALPHA_VANTAGE_API_KEY")
